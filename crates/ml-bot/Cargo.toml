@@ -1,0 +1,10 @@
+[package]
+name = "ml-bot"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tch = "0.16.0"
+chess-ai-core = { path = "../core" }
+random-bot ={ path = "../random-bot" }
+rand = "0.8.5"
