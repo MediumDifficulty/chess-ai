@@ -349,7 +349,6 @@ impl Board {
         let mut sliding = self.generate_sliding_moves(pos, diagnostics);
         let pawn = self.generate_pawn_moves(pos, diagnostics);
         let offsetting = self.generate_offsetting_moves(pos, diagnostics);
-        // println!("{:?} s: {} p: {}, k: {}", pos, moves.len(), pawn.len(), knight.len());
 
         diagnostics.sliding_moves += sliding.len();
         diagnostics.pawn_moves += pawn.len();
@@ -391,7 +390,6 @@ impl Board {
             let responses = board_clone.generate_moves(&mut MoveGenDiagnostics::default(), false);
 
             if responses.iter().any(|mv| mv.to_pos == king_pos) {
-                // println!("e");
                 diagnostics.checks += 1;
                 continue;
             } else {

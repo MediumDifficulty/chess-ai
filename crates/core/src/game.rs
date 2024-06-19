@@ -386,7 +386,7 @@ impl Board {
         let mut attacked_squares = BitBoard::default();
         let mut c = self.clone();
         c.white_to_move = !c.white_to_move;
-        for m in c.generate_legal_moves_cached(&mut MoveGenDiagnostics::default(), cache) {
+        for m in c.generate_moves(&mut MoveGenDiagnostics::default(), false) {
             attacked_squares.set(m.to_pos, true);
         }
         

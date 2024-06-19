@@ -12,6 +12,7 @@ mod perft {
         let bot = RandomEngine;
         let mut total_moves = 0u64;
         for g in 0..GAMES {
+            println!("Game: {g}");
             let mut moves = 0u64;
             let mut b = Board::default();
             loop {
