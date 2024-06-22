@@ -3,9 +3,6 @@ name = "random-bot"
 version = "0.1.0"
 edition = "2021"
 
-[profile.test]
-opt-level = 3
-
 [dependencies]
 chess-ai-core = { path = "../core" }
 rand = "0.8.5"

@@ -23,7 +23,7 @@ pub struct Board {
     pub total_moves: usize,
     pub halfmoves: usize,
     #[derivative(Hash = "ignore")]
-    position_counts: HashMap<BoardData, usize>
+    pub position_counts: HashMap<BoardData, usize>
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -216,6 +216,10 @@ impl Board {
         });
 
         format!("{position} {slide_to_move} {castling} {en_passant} {} {}", self.halfmoves, self.total_moves)
+    }
+
+    pub fn repetitions(&self) -> usize {
+        *self.position_counts.get(&self.pieces).unwrap_or(&0)
     }
 
     pub fn get(&self, pos: BoardPos) -> Option<Piece> {

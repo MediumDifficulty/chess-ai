@@ -6,5 +6,8 @@ edition = "2021"
 [dependencies]
 tch = "0.16.0"
 chess-ai-core = { path = "../core" }
-random-bot ={ path = "../random-bot" }
+random-bot = { path = "../random-bot" }
+first-bot = { path = "../first-bot" }
 rand = "0.8.5"
+arrayvec = "0.7.4"
+zstd = "0.13.1"

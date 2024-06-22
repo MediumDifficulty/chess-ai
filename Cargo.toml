@@ -2,6 +2,8 @@
 resolver = "2"
 
 members = [
-    "crates/core", "crates/ml-bot",
+    "crates/core",
+    "crates/first-bot",
+    "crates/ml-bot",
     "crates/random-bot"
 ]
