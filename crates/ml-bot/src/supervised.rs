@@ -1,10 +1,12 @@
-use std::{fs::File, io::{BufRead, BufReader}, path::Path};
+use std::{
+    fs::File,
+    io::{BufRead, BufReader},
+    path::Path,
+};
 
 use zstd::Decoder;
 
-pub struct LichessDataset {
-
-}
+pub struct LichessDataset {}
 
 impl LichessDataset {
     pub fn load(path: &Path) {

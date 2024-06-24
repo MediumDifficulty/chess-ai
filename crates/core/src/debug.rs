@@ -1,4 +1,7 @@
-use crate::{game::{Board, GameOutcome}, movegen::{BoardCache, MoveGenDiagnostics}};
+use crate::{
+    game::{Board, GameOutcome},
+    movegen::{BoardCache, MoveGenDiagnostics},
+};
 
 pub fn gen_node_nums(
     board: &Board,

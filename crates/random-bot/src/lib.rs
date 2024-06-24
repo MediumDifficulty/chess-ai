@@ -1,4 +1,8 @@
-use chess_ai_core::{game::{Board, Move}, movegen::MoveGenDiagnostics, Engine};
+use chess_ai_core::{
+    game::{Board, Move},
+    movegen::MoveGenDiagnostics,
+    Engine,
+};
 use rand::{thread_rng, Rng};
 
 pub struct RandomEngine;

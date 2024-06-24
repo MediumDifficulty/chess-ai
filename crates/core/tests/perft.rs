@@ -2,11 +2,7 @@
 
 #[cfg(test)]
 mod perft {
-    use chess_ai_core::{
-        game::Board,
-        movegen::BoardCache,
-        debug
-    };
+    use chess_ai_core::{debug, game::Board, movegen::BoardCache};
     use paste::paste;
 
     macro_rules! perft_test {
@@ -38,7 +34,8 @@ mod perft {
     const POS5_FEN: &str = "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8";
     const POS5_FEN_NODES: [usize; 5] = [44, 1486, 62379, 2103487, 89941194];
 
-    const POS6_FEN: &str = "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10";
+    const POS6_FEN: &str =
+        "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10";
     const POS6_FEN_NODES: [usize; 6] = [46, 2079, 89890, 3894594, 164075551, 6923051137];
 
     perft_test!(1, DEFAULT_FEN, default);

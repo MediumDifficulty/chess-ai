@@ -1,12 +1,23 @@
 use std::{fs::File, io::Write};
 
 use arrayvec::ArrayVec;
-use chess_ai_core::{game::{Board, GameOutcome, Move}, movegen::{BoardCache, MoveGenDiagnostics}, Engine};
+use chess_ai_core::{
+    game::{Board, GameOutcome, Move},
+    movegen::{BoardCache, MoveGenDiagnostics},
+    Engine,
+};
 use rand::Rng;
 use random_bot::RandomEngine;
-use tch::{kind::{FLOAT_CPU, INT64_CPU}, nn::{self, OptimizerConfig}, Device, Kind, Tensor};
+use tch::{
+    kind::{FLOAT_CPU, FLOAT_CUDA, INT64_CPU, INT64_CUDA},
+    nn::{self, OptimizerConfig},
+    Device, Kind, Tensor,
+};
 
-use crate::{generate_output_map, get_highest_ranked_legal_move, get_inputs, BOARD_SIZE, BOARD_SQUARES, INPUT_SIZE, INT_INPUT_BITS, NON_SPATIAL_DATA_LEN, NUM_ACTIONS, TOTAL_PLANES};
+use crate::{
+    generate_output_map, get_highest_ranked_legal_move, get_inputs, BOARD_SIZE, BOARD_SQUARES,
+    INPUT_SIZE, INT_INPUT_BITS, NON_SPATIAL_DATA_LEN, NUM_ACTIONS, TOTAL_PLANES,
+};
 
 const EPOCHS: usize = 1000;
 const NSTEPS: i64 = 1 << INT_INPUT_BITS;
@@ -24,15 +35,15 @@ const TRAIN_SIZE: i64 = NSTEPS * GAMES;
 pub fn model(p: &nn::Path) -> Box<dyn Fn(&Tensor) -> (Tensor, Tensor)> {
     let conv_config = nn::ConvConfig {
         stride: 1, // default
-        padding: 3,
+        padding: 1,
         padding_mode: nn::PaddingMode::Zeros, // TODO: I think this does what I think it does
         ..Default::default()
     };
 
     let seq = nn::seq()
-        .add(nn::conv2d(p / "c1", TOTAL_PLANES, 32, 7, conv_config))
+        .add(nn::conv2d(p / "c1", TOTAL_PLANES, 32, 3, conv_config))
         .add_fn(Tensor::relu)
-        .add(nn::conv2d(p / "c2", 32, 16, 7, conv_config))
+        .add(nn::conv2d(p / "c2", 32, 16, 3, conv_config))
         .add_fn(|xs| xs.relu().flat_view());
 
     // let fc = nn::seq()
@@ -72,25 +83,28 @@ pub fn train() {
     let device = Device::cuda_if_available();
     let vs = nn::VarStore::new(device);
     let model = model(&vs.root());
-    let mut opt = nn::Adam::default().eps(1e-4).build(&vs, LEARNING_RATE).unwrap();
+    let mut opt = nn::Adam::default()
+        .eps(1e-4)
+        .build(&vs, LEARNING_RATE)
+        .unwrap();
 
     let output_map = generate_output_map();
 
     let mut total_episodes = 0.;
-    
-    let s_states = Tensor::zeros([NSTEPS + 1, GAMES, INPUT_SIZE], FLOAT_CPU);
-    
+
+    let s_states = Tensor::zeros([NSTEPS + 1, GAMES, INPUT_SIZE], FLOAT_CUDA);
+
     for epoch in 0..EPOCHS {
         let mut env = Environment::new(vec![Box::new(RandomEngine)]);
 
-        let mut sum_rewards = Tensor::zeros([GAMES], FLOAT_CPU);
+        let mut sum_rewards = Tensor::zeros([GAMES], FLOAT_CUDA);
         let mut total_rewards = 0.;
-        s_states.get(0).copy_(&env.observe()); // Slight variation from example
+        s_states.get(0).copy_(&env.observe().to_device(device)); // Slight variation from example
 
-        let s_values = Tensor::zeros([NSTEPS, GAMES], FLOAT_CPU);
-        let s_rewards = Tensor::zeros([NSTEPS, GAMES], FLOAT_CPU);
-        let s_actions = Tensor::zeros([NSTEPS, GAMES], INT64_CPU);
-        let s_masks = Tensor::zeros([NSTEPS, GAMES], FLOAT_CPU);
+        let s_values = Tensor::zeros([NSTEPS, GAMES], FLOAT_CUDA);
+        let s_rewards = Tensor::zeros([NSTEPS, GAMES], FLOAT_CUDA);
+        let s_actions = Tensor::zeros([NSTEPS, GAMES], INT64_CUDA);
+        let s_masks = Tensor::zeros([NSTEPS, GAMES], FLOAT_CUDA);
 
         let mut tracker = EnvironmentTracker::default();
         for s in 0..NSTEPS {
@@ -98,17 +112,22 @@ pub fn train() {
             let probs = actor.softmax(-1, Kind::Float);
             let step = env.step(&probs, &output_map, Some(&mut tracker), device);
 
-            sum_rewards += &step.reward;
-            total_rewards += f64::try_from((&sum_rewards * &step.is_done).sum(Kind::Float)).unwrap();
-            total_episodes += f64::try_from(step.is_done.sum(Kind::Float)).unwrap();
+            let reward = step.reward.to_device(device);
+            let action = step.action.to_device(device);
+            let observation = step.observation.to_device(device);
+            let is_done = step.is_done.to_device(device);
 
-            let masks = Tensor::from(1f32) - step.is_done;
+            sum_rewards += &reward;
+            total_rewards += f64::try_from((&sum_rewards * &is_done).sum(Kind::Float)).unwrap();
+            total_episodes += f64::try_from(is_done.sum(Kind::Float)).unwrap();
+
+            let masks = Tensor::from(1f32) - is_done;
             sum_rewards *= &masks;
 
-            s_actions.get(s).f_copy_(&step.action).unwrap();
+            s_actions.get(s).f_copy_(&action).unwrap();
             s_values.get(s).f_copy_(&critic.squeeze_dim(-1)).unwrap();
-            s_states.get(s + 1).f_copy_(&step.observation).unwrap(); // TODO: Double check this
-            s_rewards.get(s).f_copy_(&step.reward).unwrap();
+            s_states.get(s + 1).f_copy_(&observation).unwrap(); // TODO: Double check this
+            s_rewards.get(s).f_copy_(&reward).unwrap();
             s_masks.get(s).f_copy_(&masks).unwrap();
             // break;
         }
@@ -116,9 +135,8 @@ pub fn train() {
         // break;
         let states = s_states.narrow(0, 0, NSTEPS).view([TRAIN_SIZE, INPUT_SIZE]);
         let returns = {
-            let r = Tensor::zeros([NSTEPS + 1, GAMES], FLOAT_CPU);
+            let r = Tensor::zeros([NSTEPS + 1, GAMES], FLOAT_CUDA);
             let critic = tch::no_grad(|| model(&s_states.get(-1)).0);
-            // println!("{:?}", critic.size());
             r.get(-1).copy_(&critic.view([GAMES]));
             for s in (0..NSTEPS).rev() {
                 let r_s = s_rewards.get(s) + r.get(s + 1) * s_masks.get(s) * DISCOUNT_FACTOR;
@@ -128,7 +146,7 @@ pub fn train() {
         };
         let actions = s_actions.view([TRAIN_SIZE]);
         for _index in 0..OPT_EPOCHS {
-            let batch_indices = Tensor::randint(TRAIN_SIZE, [OPT_BATCHSIZE], INT64_CPU);
+            let batch_indices = Tensor::randint(TRAIN_SIZE, [OPT_BATCHSIZE], INT64_CUDA);
             let states = states.index_select(0, &batch_indices);
             let actions = actions.index_select(0, &batch_indices);
             let returns = returns.index_select(0, &batch_indices);
@@ -143,16 +161,12 @@ pub fn train() {
                 .sum_dim_intlist(-1, false, Kind::Float)
                 .mean(Kind::Float);
             let advantages = returns.to_device(device) - critic;
-
-            // Normalize advantages
-            // let advantages = (&advantages - advantages.mean(Kind::Float)) / (advantages.std(true) + 1e-8);
-
             let value_loss = (&advantages * &advantages).mean(Kind::Float);
             let action_loss = (-advantages.detach() * action_log_probs).mean(Kind::Float);
             let loss = value_loss * 0.5 + action_loss - dist_entropy * ENTROPY_COEFFICIENT;
             opt.backward_step_clip(&loss, 0.5);
         }
-        
+
         println!("{}", f64::try_from(s_rewards.sum(Kind::Float)).unwrap());
         if epoch % 50 == 0 {
             vs.save(format!("models/{}.safetensors", epoch)).unwrap();
@@ -190,8 +204,11 @@ impl EnvironmentTracker {
             .map(|m| m.to_string().trim().to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        
-        File::create(path).unwrap().write_all(content.as_bytes()).unwrap();
+
+        File::create(path)
+            .unwrap()
+            .write_all(content.as_bytes())
+            .unwrap();
     }
 }
 
@@ -209,8 +226,7 @@ impl Environment {
 
         let mut env = Self {
             games: [0; 64].map(|_| Game::default()),
-            engine_selection: [0; GAMES as usize]
-                .map(|_| rng.gen_range(0..engines.len())),
+            engine_selection: [0; GAMES as usize].map(|_| rng.gen_range(0..engines.len())),
             engines,
         };
 
@@ -228,7 +244,13 @@ impl Environment {
         env
     }
 
-    pub fn step(&mut self, probs: &Tensor, output_map: &[Move; NUM_ACTIONS as usize], mut tracker: Option<&mut EnvironmentTracker>, device: Device) -> Step {
+    pub fn step(
+        &mut self,
+        probs: &Tensor,
+        output_map: &[Move; NUM_ACTIONS as usize],
+        mut tracker: Option<&mut EnvironmentTracker>,
+        device: Device,
+    ) -> Step {
         let rewards = Tensor::zeros([GAMES], FLOAT_CPU);
         let is_done = Tensor::zeros([GAMES], FLOAT_CPU);
         let observation = Tensor::zeros([GAMES, INPUT_SIZE], FLOAT_CPU);
@@ -241,8 +263,12 @@ impl Environment {
             let legal_moves = game
                 .board
                 .generate_legal_moves(&mut MoveGenDiagnostics::default());
-            let move_idx =
-                get_highest_ranked_legal_move(&probs.get(i as i64), &legal_moves, output_map, &game.board);
+            let move_idx = get_highest_ranked_legal_move(
+                &probs.get(i as i64),
+                &legal_moves,
+                output_map,
+                &game.board,
+            );
             game.board.make_move(&output_map[move_idx]);
 
             if let Some(ref mut tracker) = tracker {

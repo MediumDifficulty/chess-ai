@@ -1,4 +1,9 @@
-use std::{collections::HashMap, fmt::{format, Display, Formatter}, ops::{Index, IndexMut}, str::FromStr};
+use std::{
+    collections::HashMap,
+    fmt::{Display, Formatter},
+    ops::{Index, IndexMut},
+    str::FromStr,
+};
 
 use anyhow::{anyhow, Context, Result};
 use derivative::Derivative;
@@ -23,7 +28,7 @@ pub struct Board {
     pub total_moves: usize,
     pub halfmoves: usize,
     #[derivative(Hash = "ignore")]
-    pub position_counts: HashMap<BoardData, usize>
+    pub position_counts: HashMap<BoardData, usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -91,18 +96,36 @@ impl CastlingRights {
         }
 
         let p = [
-            if self.white_king { Piece::WKing } else { Piece::Empty },
-            if self.white_queen { Piece::WQueen } else { Piece::Empty },
-            if self.black_king { Piece::BKing } else { Piece::Empty },
-            if self.black_queen { Piece::BQueen } else { Piece::Empty }, 
-        ].map(|p| format!("{p}"));
+            if self.white_king {
+                Piece::WKing
+            } else {
+                Piece::Empty
+            },
+            if self.white_queen {
+                Piece::WQueen
+            } else {
+                Piece::Empty
+            },
+            if self.black_king {
+                Piece::BKing
+            } else {
+                Piece::Empty
+            },
+            if self.black_queen {
+                Piece::BQueen
+            } else {
+                Piece::Empty
+            },
+        ]
+        .map(|p| format!("{p}"));
 
         p.join("")
     }
 }
 
 impl Board {
-    pub const DEFAULT_FEN: &'static str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    pub const DEFAULT_FEN: &'static str =
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
     pub const CASTLE_POSITIONS: [BoardPos; 2] = [BoardPos::new(2, 0), BoardPos::new(6, 0)];
     pub const CASTLE_FROM_POS: BoardPos = BoardPos::new(4, 0);
@@ -180,7 +203,8 @@ impl Board {
     }
 
     pub fn to_fen(&self) -> String {
-        let position = (0..8).rev()
+        let position = (0..8)
+            .rev()
             .map(|rank| {
                 let mut rank_str = String::new();
 
@@ -188,7 +212,7 @@ impl Board {
                 for file in 0..8 {
                     let pos = BoardPos::new(file, rank);
                     let piece = self[pos];
-    
+
                     if piece.is_empty() {
                         consecutive_empty += 1;
                     } else {
@@ -196,7 +220,7 @@ impl Board {
                             rank_str.push_str(&consecutive_empty.to_string());
                             consecutive_empty = 0;
                         }
-    
+
                         rank_str.push_str(&format!("{piece}"))
                     }
                 }
@@ -206,8 +230,10 @@ impl Board {
                 }
 
                 rank_str
-            }).collect::<Vec<_>>().join("/");
-        
+            })
+            .collect::<Vec<_>>()
+            .join("/");
+
         let slide_to_move = if self.white_to_move { "w" } else { "b" };
         let castling = self.castling.to_fen();
         let en_passant = self.en_passant.map_or("-".to_string(), |file| {
@@ -215,7 +241,10 @@ impl Board {
             format!("{ep_rank}{}", file_to_char(file))
         });
 
-        format!("{position} {slide_to_move} {castling} {en_passant} {} {}", self.halfmoves, self.total_moves)
+        format!(
+            "{position} {slide_to_move} {castling} {en_passant} {} {}",
+            self.halfmoves, self.total_moves
+        )
     }
 
     pub fn repetitions(&self) -> usize {
@@ -295,12 +324,13 @@ impl Board {
             if self[m.from_pos].is_pawn() // Piece is a pawn
                 && m.to_pos.file == ep_file // Piece is moving to the en passant file
                 && m.from_pos.file != m.to_pos.file // Piece is not moving to the same file
-                && self[m.to_pos].is_empty() // Destination square is empty
+                && self[m.to_pos].is_empty()
+            // Destination square is empty
             {
                 self[m.to_pos] = self[m.from_pos];
                 self[m.from_pos] = Piece::Empty;
                 self[BoardPos::new(ep_file, m.from_pos.rank)] = Piece::Empty;
-                
+
                 return true;
             }
         }
@@ -309,7 +339,10 @@ impl Board {
     }
 
     pub fn make_move(&mut self, m: &Move) {
-        assert!(!self[m.to_pos].is_king(), "King captured!\nBoard:\n{self}\nMove: {m}");
+        assert!(
+            !self[m.to_pos].is_king(),
+            "King captured!\nBoard:\n{self}\nMove: {m}"
+        );
 
         if self.castle(m) {
             self.castling.invalidate(self.white_to_move, (true, true));
@@ -358,7 +391,10 @@ impl Board {
             self.castling.invalidate(self.white_to_move, (true, true));
         }
 
-        self[m.to_pos] = m.promotion.map(|p| p.to_side(self.white_to_move)).unwrap_or(piece);
+        self[m.to_pos] = m
+            .promotion
+            .map(|p| p.to_side(self.white_to_move))
+            .unwrap_or(piece);
         self[m.from_pos] = Piece::Empty;
 
         // En passant
@@ -393,7 +429,7 @@ impl Board {
         for m in c.generate_moves(&mut MoveGenDiagnostics::default(), false) {
             attacked_squares.set(m.to_pos, true);
         }
-        
+
         let king_square = self
             .find_first(Piece::WKing.to_side(self.white_to_move))
             .unwrap();
@@ -440,7 +476,7 @@ impl Board {
                 let pos = BoardPos::new(file, rank);
                 let polarity = (file + rank) % 2 == 0;
                 let piece = self[pos];
-                
+
                 let side = if piece.is_white() {
                     &mut counts[0]
                 } else if piece.is_black() {
@@ -451,29 +487,30 @@ impl Board {
                 };
 
                 match piece.to_side(true) {
-                    Piece::WKing => {},
+                    Piece::WKing => {}
                     Piece::WQueen => side.queens += 1,
                     Piece::WRook => side.rooks += 1,
                     Piece::WKnight => side.knights += 1,
                     Piece::WPawn => side.pawns += 1,
-                    Piece::WBishop => if polarity {
-                        side.bishops.0 += 1;
-                    } else {
-                        side.bishops.1 += 1;
-                    },
-                    _ => unreachable!()
+                    Piece::WBishop => {
+                        if polarity {
+                            side.bishops.0 += 1;
+                        } else {
+                            side.bishops.1 += 1;
+                        }
+                    }
+                    _ => unreachable!(),
                 }
             }
         }
 
-        
         counts.iter().any(|side| {
             let total_bishops = side.bishops.0 + side.bishops.1;
-            
+
             (side.pawns >= 1 || side.rooks >= 1 || side.queens >= 1)
-            || (side.knights >= 1 && total_bishops >= 1)
-            || (side.knights >= 2)
-            || (side.bishops.0 >= 1 && side.bishops.1 >= 1)
+                || (side.knights >= 1 && total_bishops >= 1)
+                || (side.knights >= 2)
+                || (side.bishops.0 >= 1 && side.bishops.1 >= 1)
             // TODO: Piece against king
             // https://www.reddit.com/r/chess/comments/se89db/a_writeup_on_definitions_of_insufficient_material/
         })
@@ -754,12 +791,17 @@ impl Move {
 
 impl Display for Move {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}{}{}", self.from_pos, self.to_pos, self.promotion.unwrap_or(Piece::Empty))?;
+        write!(
+            f,
+            "{}{}{}",
+            self.from_pos,
+            self.to_pos,
+            self.promotion.unwrap_or(Piece::Empty)
+        )?;
 
         Ok(())
     }
 }
-
 
 impl FromStr for Move {
     type Err = anyhow::Error;
@@ -777,7 +819,7 @@ impl FromStr for Move {
         Ok(Move {
             from_pos,
             to_pos,
-            promotion
+            promotion,
         })
     }
 }

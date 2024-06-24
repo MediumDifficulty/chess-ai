@@ -1,7 +1,7 @@
 pub mod ppo;
 pub mod supervised;
 
-use std::{collections::HashSet, io::stdin};
+use std::{collections::HashSet, io::stdin, path::Path};
 
 use chess_ai_core::{
     game::{Board, BoardPos, Move, Piece},
@@ -28,7 +28,10 @@ fn main() {
         let engine = ppo::MLEngine::new(model);
         uci::start_uci("Lamp", &engine)
     } else {
-        ppo::train();
+        // ppo::train();
+        supervised::LichessDataset::load(Path::new(
+            "D:/downloads/torrent/lichess_db_standard_rated_2024-05.pgn.zst",
+        ))
     }
 }
 
@@ -165,8 +168,6 @@ fn get_inputs(board: &Board) -> Tensor {
     cat
 }
 
-
-
 fn get_highest_ranked_legal_move(
     probs: &Tensor,
     legal_moves: &[Move],
@@ -179,7 +180,6 @@ fn get_highest_ranked_legal_move(
     let mut probs = probs.iter().copied().enumerate().collect::<Vec<_>>();
     probs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
     let legal_moves = legal_moves.iter().collect::<HashSet<_>>();
-
 
     for (i, _) in probs {
         let mv = &output_map[i];

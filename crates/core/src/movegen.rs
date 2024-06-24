@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::{game::{Board, BoardPos, CoordOffsetTyp, Move, Piece}, util::BitBoard};
+use crate::{
+    game::{Board, BoardPos, CoordOffsetTyp, Move, Piece},
+    util::BitBoard,
+};
 
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct MoveGenDiagnostics {
@@ -208,11 +211,13 @@ impl Board {
         if let Some(ep_file) = self.en_passant() {
             let ep_rank = if self.white_to_move() { 4 } else { 3 };
             // u8::MAX will never be a valid file
-            if
-                (ep_file == pos.file + 1 || ep_file == pos.file.checked_sub(1).unwrap_or(u8::MAX)) // En Passant is possible
-                && ep_rank == pos.rank 
+            if (ep_file == pos.file + 1 || ep_file == pos.file.checked_sub(1).unwrap_or(u8::MAX)) // En Passant is possible
+                && ep_rank == pos.rank
             {
-                moves.push(Move::new(pos, BoardPos::new(ep_file, pos.rank.checked_add_signed(rank_offset).unwrap())));
+                moves.push(Move::new(
+                    pos,
+                    BoardPos::new(ep_file, pos.rank.checked_add_signed(rank_offset).unwrap()),
+                ));
             }
         }
 
@@ -287,12 +292,13 @@ impl Board {
         }
 
         let mut moves = vec![];
-        
+
         let pawn_rank = if self.white_to_move { 1 } else { 6 };
         'king_side: {
-            if self.castling().get(self.white_to_move, true) {    
+            if self.castling().get(self.white_to_move, true) {
                 for i in (Self::CASTLE_FROM_POS.file + 1)..7 {
-                    let pos = BoardPos::new(i, Self::CASTLE_FROM_POS.to_side(self.white_to_move).rank);
+                    let pos =
+                        BoardPos::new(i, Self::CASTLE_FROM_POS.to_side(self.white_to_move).rank);
                     if !self[pos].is_empty() || attacked_squares[pos] {
                         break 'king_side;
                     }
@@ -305,7 +311,10 @@ impl Board {
                     }
                 }
 
-                moves.push(Move::new(pos, Self::CASTLE_POSITIONS[1].to_side(self.white_to_move)))
+                moves.push(Move::new(
+                    pos,
+                    Self::CASTLE_POSITIONS[1].to_side(self.white_to_move),
+                ))
             }
         }
 
@@ -314,9 +323,10 @@ impl Board {
                 if !self[BoardPos::new(1, 0).to_side(self.white_to_move)].is_empty() {
                     break 'queen_side;
                 }
-                
+
                 for i in 2..Self::CASTLE_FROM_POS.file {
-                    let pos = BoardPos::new(i, Self::CASTLE_FROM_POS.to_side(self.white_to_move).rank);
+                    let pos =
+                        BoardPos::new(i, Self::CASTLE_FROM_POS.to_side(self.white_to_move).rank);
                     if !self[pos].is_empty() || attacked_squares[pos] {
                         break 'queen_side;
                     }
@@ -329,7 +339,10 @@ impl Board {
                     }
                 }
 
-                moves.push(Move::new(pos, Self::CASTLE_POSITIONS[0].to_side(self.white_to_move)))
+                moves.push(Move::new(
+                    pos,
+                    Self::CASTLE_POSITIONS[0].to_side(self.white_to_move),
+                ))
             }
         }
 
@@ -340,7 +353,7 @@ impl Board {
         &self,
         pos: BoardPos,
         diagnostics: &mut MoveGenDiagnostics,
-        consider_castling: bool
+        consider_castling: bool,
     ) -> Vec<Move> {
         if self[pos].is_empty() || self[pos].is_white() != self.white_to_move() {
             return vec![];
@@ -364,12 +377,20 @@ impl Board {
         sliding
     }
 
-    pub fn generate_moves(&self, diagnostics: &mut MoveGenDiagnostics, consider_castling: bool) -> Vec<Move> {
+    pub fn generate_moves(
+        &self,
+        diagnostics: &mut MoveGenDiagnostics,
+        consider_castling: bool,
+    ) -> Vec<Move> {
         let mut moves = vec![];
 
         for file in 0..8 {
             for rank in 0..8 {
-                moves.extend(self.generate_moves_at(BoardPos::new(file, rank), diagnostics, consider_castling));
+                moves.extend(self.generate_moves_at(
+                    BoardPos::new(file, rank),
+                    diagnostics,
+                    consider_castling,
+                ));
             }
         }
 

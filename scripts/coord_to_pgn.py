@@ -9,7 +9,7 @@ pgn = f"""[Event "Test"]
 [Round "1"]
 [White "Player 1"]
 [Black "Player 2"]
-[Result "1-0"]
+[Result "1-0"] 
 """
 
 with open("game.uci.txt", "r") as file:

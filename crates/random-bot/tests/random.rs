@@ -26,7 +26,7 @@ mod perft {
                 }
             }
             // println!("{}", g);
-            
+
             println!("Game {} had {} moves total", g, moves);
             println!("Total moves {}", total_moves);
         }
