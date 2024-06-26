@@ -1,17 +1,18 @@
 
+use std::mem;
+
+use anyhow::anyhow;
 use nom::{
-    branch::alt,
-    bytes::complete::{tag, take_while},
-    character::complete::{char, one_of, u64},
-    combinator::{map, opt, value},
-    multi::{many0, many1},
-    sequence::{delimited, pair, preceded, tuple},
-    IResult,
+    branch::alt, bytes::complete::{tag, take_while}, character::complete::{char, u64}, combinator::{map, opt, value}, multi::{many0, many1}, sequence::{delimited, pair, preceded, tuple}, IResult
 };
 
-use crate::game::{BoardPos, Piece};
+use crate::game::{Board, BoardPos, Move, Piece};
 
-pub struct PgnGame {}
+pub struct PgnGame {
+    pub tags: Vec<PgnTag>,
+    pub moves: Vec<PgnMove>,
+    pub result: GameResult,
+}
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum TagType {
@@ -40,6 +41,8 @@ enum TagType {
     BlackRatingDiff,
     Ec0,
     Opening,
+    BlackTitle,
+    WhiteTitle,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -49,7 +52,7 @@ struct PgnTag {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-enum PgnMoveBody {
+pub enum PgnMoveBody {
     CastleKingSide,
     CastleQueenSide,
     PieceMove {
@@ -61,13 +64,13 @@ enum PgnMoveBody {
 }
 
 #[derive(Debug)]
-struct PgnMove {
+pub struct PgnMove {
     body: PgnMoveBody,
     comment: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-struct Disambiguation {
+pub struct Disambiguation {
     file: Option<u8>,
     rank: Option<u8>,
 }
@@ -96,6 +99,8 @@ fn parse_tag_type(i: &str) -> IResult<&str, TagType> {
             value(TagType::UtcTime, tag("UTCTime")),
             value(TagType::WhiteElo, tag("WhiteElo")),
             value(TagType::BlackElo, tag("BlackElo")),
+            value(TagType::WhiteTitle, tag("WhiteTitle")),
+            value(TagType::BlackTitle, tag("BlackTitle")),
             value(TagType::WhiteRatingDiff, tag("WhiteRatingDiff")),
             value(TagType::BlackRatingDiff, tag("BlackRatingDiff")),
             value(TagType::Ec0, tag("ECO")),
@@ -151,6 +156,7 @@ fn comment(i: &str) -> IResult<&str, String> {
 fn parse_result(i: &str) -> IResult<&str, GameResult> {
     alt((
         value(GameResult::Ongoing, char('*')),
+        value(GameResult::Score { white: 0, black: 0 }, tag("1/2-1/2")), // Draw
         map(pair(u64, preceded(char('-'), u64)), |s| GameResult::Score {
             white: s.0,
             black: s.1,
@@ -210,12 +216,14 @@ fn parse_disambiguation(i: &str) -> IResult<&str, Disambiguation> {
     })(i)
 }
 
-fn check_indicator(i: &str) -> IResult<&str, char> {
-    one_of("+#")(i)
+fn move_suffix(i: &str) -> IResult<&str, &str> {
+    let chars = "+#?!";
+
+    take_while(|c| chars.contains(c))(i)
 }
 
 fn parse_move(i: &str) -> IResult<&str, PgnMoveBody> {
-    alt((
+    let (r, p) = pair(alt((
         value(PgnMoveBody::CastleQueenSide, tag("O-O-O")),
         value(PgnMoveBody::CastleKingSide, tag("O-O")),
         // I'm sure there's a way to tidy this up with less repetition...
@@ -226,9 +234,8 @@ fn parse_move(i: &str) -> IResult<&str, PgnMoveBody> {
                 opt(tag("x")), // Capture
                 board_pos,
                 opt(preceded(tag("="), piece)),
-                opt(check_indicator),
             )),
-            |(p, d, _, dest, promotion, _)| PgnMoveBody::PieceMove {
+            |(p, d, _, dest, promotion)| PgnMoveBody::PieceMove {
                 piece: p.unwrap_or(Piece::WPawn),
                 to: dest,
                 disambiguation: d,
@@ -241,9 +248,8 @@ fn parse_move(i: &str) -> IResult<&str, PgnMoveBody> {
                 opt(tag("x")), // Capture
                 board_pos,
                 opt(preceded(tag("="), piece)),
-                opt(check_indicator),
             )),
-            |(p, _, dest, promotion, _)| PgnMoveBody::PieceMove {
+            |(p, _, dest, promotion)| PgnMoveBody::PieceMove {
                 piece: p.unwrap_or(Piece::WPawn),
                 to: dest,
                 disambiguation: Disambiguation {
@@ -253,7 +259,9 @@ fn parse_move(i: &str) -> IResult<&str, PgnMoveBody> {
                 promotion,
             },
         ),
-    ))(i)
+    )), move_suffix)(i)?;
+
+    Ok((r, p.0))
 }
 
 fn tokenise_moves(i: &str) -> IResult<&str, Vec<PgnMove>> {
@@ -266,6 +274,13 @@ fn tokenise_moves(i: &str) -> IResult<&str, Vec<PgnMove>> {
     ))(i)
 }
 
+fn parse_move_section(i: &str) -> IResult<&str, (Vec<PgnMove>, GameResult)> {
+    pair(
+        tokenise_moves,
+        parse_result,
+    )(i)
+}
+
 pub fn parse_pgn(src: &str) -> IResult<&str, PgnGame> {
     let (r, (tags, moves, result)) = tuple((
         many1(preceded(sp, parse_tag)),
@@ -273,11 +288,110 @@ pub fn parse_pgn(src: &str) -> IResult<&str, PgnGame> {
         preceded(sp, parse_result),
     ))(src)?;
 
-    println!("Tags: {tags:?}");
-    println!("Moves: {moves:#?}");
-    println!("Result: {result:?}");
+    Ok((r, PgnGame {
+        tags,
+        moves,
+        result
+    }))
+}
 
-    todo!()
+#[derive(Default)]
+pub struct IncrementalPgnParser {
+    tags: Vec<PgnTag>,
+    moves: Vec<PgnMove>,
+    result: Option<GameResult>,
+    current_section: ParserSection,
+}
+
+#[derive(Default)]
+enum ParserSection {
+    #[default]
+    Tags,
+    Moves
+}
+
+impl IncrementalPgnParser {
+    pub fn parse_line(&mut self, line: &str) -> anyhow::Result<()> {
+        if line.is_empty() {
+            return Ok(());
+        }
+
+        if !line.starts_with('[') {
+            self.current_section = ParserSection::Moves;
+        }
+
+        match self.current_section {
+            ParserSection::Tags => {
+                self.tags.push(parse_tag(line).map(|e| e.1).map_err(|e| anyhow!("{}", e.to_string()))?);
+            },
+            ParserSection::Moves => {
+                let (moves, result) = parse_move_section(line).map(|e| e.1).map_err(|e| anyhow!("Moves: {}", e.to_string()))?;
+                self.moves.extend(moves);
+                self.result = Some(result);
+            },
+        }
+
+        Ok(())
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.result.is_some()
+    }
+
+    pub fn into_pgn_game(self) -> PgnGame {
+        PgnGame {
+            tags: self.tags,
+            moves: self.moves,
+            result: self.result.unwrap_or(GameResult::Ongoing),
+        }
+    }
+
+    pub fn reset_and_convert(&mut self) -> PgnGame {
+        let mut temp = Self::default();
+        mem::swap(self, &mut temp);
+        temp.into_pgn_game()
+    }
+}
+
+impl Board {
+    pub fn make_pgn_move(&mut self, mv: &PgnMove) -> Move {
+        let mv = &mv.body;
+        
+        let move_ = match mv {
+            PgnMoveBody::CastleKingSide => Move::new(Self::CASTLE_FROM_POS.to_side(self.white_to_move), Self::CASTLE_POSITIONS[1].to_side(self.white_to_move)),
+            PgnMoveBody::CastleQueenSide => Move::new(Self::CASTLE_FROM_POS.to_side(self.white_to_move), Self::CASTLE_POSITIONS[0].to_side(self.white_to_move)),
+            PgnMoveBody::PieceMove { piece, to, disambiguation, promotion } => 'a: {
+                let legal_moves = self.generate_legal_moves(&mut Default::default());
+
+                for legal_move in legal_moves {
+                    let p = self[legal_move.from_pos];
+                    if !(legal_move.to_pos == *to && p == piece.to_side(self.white_to_move) && legal_move.promotion == promotion.map(|p| p.to_side(self.white_to_move))) {
+                        continue;
+                    }
+
+                    if let Some(file) = disambiguation.file {
+                        if legal_move.from_pos.file != file {
+                            continue;
+                        }
+                    }
+
+                    if let Some(rank) = disambiguation.rank {
+                        if legal_move.from_pos.rank != rank {
+                            continue;
+                        }
+                    }
+
+                    break 'a legal_move;
+                }
+
+                panic!("No move found for {mv:?}\n{self}")
+            },
+        };
+        
+        self.make_move(&move_);
+
+        move_
+    }
 }
 
 #[cfg(test)]

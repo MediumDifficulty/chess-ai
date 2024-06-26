@@ -1,38 +1,37 @@
 pub mod ppo;
 pub mod supervised;
+pub mod dataset;
 
-use std::{collections::HashSet, io::stdin, path::Path};
+use std::collections::HashSet;
 
-use chess_ai_core::{
-    game::{Board, BoardPos, Move, Piece},
-    uci,
-};
-use tch::{
-    nn::{self},
-    Device, Tensor,
-};
+use chess_ai_core::game::{Board, BoardPos, Move, Piece};
+use tch::Tensor;
 
 /// Number of possible chess moves
 const NUM_ACTIONS: i64 = 1968;
 
 fn main() {
     println!("Starting...");
-    let mut buf = String::new();
-    stdin().read_line(&mut buf).unwrap();
-    if buf.trim() == "uci" {
-        let device = Device::cuda_if_available();
-        let mut vs = nn::VarStore::new(device);
-        vs.load("C:/Users/Thomas/Programming/rust/chess-ai/crates/ml-bot/models/950.safetensors")
-            .expect("Invalid model file");
-        let model = ppo::model(&vs.root());
-        let engine = ppo::MLEngine::new(model);
-        uci::start_uci("Lamp", &engine)
-    } else {
-        // ppo::train();
-        supervised::LichessDataset::load(Path::new(
-            "D:/downloads/torrent/lichess_db_standard_rated_2024-05.pgn.zst",
-        ))
-    }
+    supervised::train();
+
+    // let mut buf = String::new();
+    // stdin().read_line(&mut buf).unwrap();
+    // if buf.trim() == "uci" {
+    //     let device = Device::cuda_if_available();
+    //     let mut vs = nn::VarStore::new(device);
+    //     vs.load("C:/Users/Thomas/Programming/rust/chess-ai/crates/ml-bot/models/950.safetensors")
+    //         .expect("Invalid model file");
+    //     let model = ppo::model(&vs.root());
+    //     let engine = ppo::MLEngine::new(model);
+    //     uci::start_uci("Lamp", &engine)
+    // } else {
+    //     // ppo::train();
+    //     // let dataset = supervised::LichessDataset::<12>::open(Path::new(
+    //     //     "D:/downloads/torrent/lichess_db_standard_rated_2024-05.pgn.zst",
+    //     // ));
+
+    //     supervised::train();
+    // }
 }
 
 fn generate_output_map() -> [Move; NUM_ACTIONS as usize] {
@@ -86,15 +85,15 @@ fn generate_output_map() -> [Move; NUM_ACTIONS as usize] {
     // Promotions
     for file in 0..8 {
         // Iterate over ranks 1 and 7
-        for (rank, offset) in [(6, 1), (1, -1)] {
+        for (rank, offset, white) in [(6, 1, true), (1, -1, false)] {
             let pos = BoardPos::new(file, rank);
             // Iterate over pawn takes
             for offset in [(-1, offset), (0, offset), (1, offset)] {
                 if let Some(p) = pos.add_offset(offset) {
-                    moves.push(Move::new_promotion(pos, p, Piece::WBishop));
-                    moves.push(Move::new_promotion(pos, p, Piece::WKnight));
-                    moves.push(Move::new_promotion(pos, p, Piece::WQueen));
-                    moves.push(Move::new_promotion(pos, p, Piece::WRook));
+                    moves.push(Move::new_promotion(pos, p, Piece::WBishop.to_side(white)));
+                    moves.push(Move::new_promotion(pos, p, Piece::WKnight.to_side(white)));
+                    moves.push(Move::new_promotion(pos, p, Piece::WQueen.to_side(white)));
+                    moves.push(Move::new_promotion(pos, p, Piece::WRook.to_side(white)));
                 }
             }
         }
@@ -154,7 +153,9 @@ fn get_inputs(board: &Board) -> Tensor {
         layers[13][0][2] = 1.;
     }
 
-    let spatial = Tensor::stack(&layers.map(|p| Tensor::from_slice2(&p)), 0);
+    // let spatial = Tensor::stack(&layers.map(|p| Tensor::from_slice2(&p)), 0);
+    let spatial = layers.iter().flat_map(|e| e.iter().flatten()).copied().collect::<Vec<_>>();
+    let spatial = Tensor::from_slice(spatial.as_slice());
     let non_spatial = Tensor::cat(
         &[
             num_to_binary_input(board.total_moves as u64, INT_INPUT_BITS),
@@ -163,7 +164,7 @@ fn get_inputs(board: &Board) -> Tensor {
         0,
     );
 
-    let cat = Tensor::cat(&[spatial.view(-1), non_spatial], 0);
+    let cat = Tensor::cat(&[spatial, non_spatial], 0);
     debug_assert_eq!(cat.size(), vec![INPUT_SIZE]);
     cat
 }

@@ -321,6 +321,7 @@ dependencies = [
 name = "ml-bot"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "arrayvec",
  "chess-ai-core",
  "first-bot",

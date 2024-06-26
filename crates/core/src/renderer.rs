@@ -6,11 +6,11 @@ const RANK_SEPARATOR: &str = " +---+---+---+---+---+---+---+---+";
 
 impl Display for Board {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for rank in 0..8 {
+        for rank in (0..8).rev() {
             writeln!(f, "{RANK_SEPARATOR}")?;
             write!(f, " |")?;
             for file in 0..8 {
-                let pos = BoardPos::new(file, 7 - rank);
+                let pos = BoardPos::new(file, rank);
                 let piece = self[pos];
                 // let p = (file + rank) % 2 == 0;
                 // let a = if p {
